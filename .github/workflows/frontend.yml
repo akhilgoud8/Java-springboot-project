@@ -3,7 +3,10 @@ name: Frontend to EC2
 on:
   workflow_dispatch:
 
-
+  # Uncomment if you want automatic deployment on push to main
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   deploy:
@@ -20,7 +23,7 @@ jobs:
 
 
       # ============================================================
-      # 2. SET UP JAVA
+      # 2. SET UP JAVA 17
       # Required for SonarQube scanner
       # ============================================================
 
@@ -56,7 +59,7 @@ jobs:
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
 
       # ============================================================
@@ -85,7 +88,6 @@ jobs:
             # ========================================================
 
             mkdir -p "$APP_DIR"
-
             cd "$APP_DIR"
 
             # ========================================================
@@ -198,8 +200,6 @@ jobs:
             # RELOAD SYSTEMD
             # ========================================================
 
-            echo "Reloading systemd..."
-
             sudo systemctl daemon-reload
 
             # ========================================================
@@ -233,7 +233,7 @@ jobs:
             sudo systemctl status frontend --no-pager
 
             # ========================================================
-            # CHECK PORT
+            # CHECK PORT 8501
             # ========================================================
 
             echo "Checking port 8501..."
