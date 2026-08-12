@@ -1,29 +1,42 @@
 name: Frontend to EC2
 
 on:
+  workflow_dispatch:
+
+  # Uncomment if you want deployment automatically on push to main
   # push:
   #   branches:
   #     - main
-
-  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ============================================================
+      # 1. CHECKOUT REPOSITORY
+      # ============================================================
+
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      ######################################################
-      # SonarQube Scan
-      ######################################################
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      # ============================================================
+      # 2. SET UP JAVA
+      # Required for SonarQube scanner
+      # ============================================================
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
+
+
+      # ============================================================
+      # 3. SONARQUBE SCAN
+      # ============================================================
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -36,21 +49,24 @@ jobs:
             -Dsonar.projectName=frontend
             -Dsonar.sources=frontend
 
-      ######################################################
-      # Quality Gate
-      ######################################################
+
+      # ============================================================
+      # 4. SONARQUBE QUALITY GATE
+      # ============================================================
 
       - name: SonarQube Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }
 
-      ######################################################
-      # Deploy
-      ######################################################
 
-      - name: Deploy via SSH
+      # ============================================================
+      # 5. DEPLOY TO EC2
+      # ============================================================
+
+      - name: Deploy Frontend to EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -59,49 +75,117 @@ jobs:
           script: |
             set -e
 
-            APP_DIR=/home/ec2-user/front
-            REPO_NAME=Java-springboot-project
-            REPO_URL=https://github.com/CloudTechDevOps/Java-springboot-project.git
+            echo "=========================================="
+            echo "Starting Frontend Deployment"
+            echo "=========================================="
 
-            echo "🚀 Starting deployment..."
+            APP_DIR="/home/ec2-user/front"
+            REPO_NAME="Java-springboot-project"
+            REPO_URL="https://github.com/CloudTechDevOps/Java-springboot-project.git"
 
-            mkdir -p $APP_DIR
-            cd $APP_DIR
+            # ========================================================
+            # CREATE APPLICATION DIRECTORY
+            # ========================================================
+
+            mkdir -p "$APP_DIR"
+
+            cd "$APP_DIR"
+
+            # ========================================================
+            # CLONE OR UPDATE REPOSITORY
+            # ========================================================
 
             if [ -d "$REPO_NAME/.git" ]; then
-              cd $REPO_NAME
+
+              echo "Repository already exists."
+              echo "Pulling latest code..."
+
+              cd "$REPO_NAME"
+
               git reset --hard
+              git clean -fd
+
+              git checkout main
               git pull origin main
+
             else
-              git clone $REPO_URL
-              cd $REPO_NAME
+
+              echo "Repository does not exist."
+              echo "Cloning repository..."
+
+              git clone "$REPO_URL"
+
+              cd "$REPO_NAME"
+
             fi
+
+            # ========================================================
+            # INSTALL PYTHON
+            # ========================================================
+
+            echo "Installing Python..."
 
             sudo dnf install -y python3 python3-pip
 
-            cd frontend
+            # ========================================================
+            # FRONTEND DIRECTORY
+            # ========================================================
+
+            cd "$APP_DIR/$REPO_NAME/frontend"
+
+            echo "Frontend directory:"
+            pwd
+
+            # ========================================================
+            # CREATE VIRTUAL ENVIRONMENT
+            # ========================================================
 
             if [ ! -d "venv" ]; then
+
+              echo "Creating Python virtual environment..."
+
               python3 -m venv venv
+
             fi
 
-            source venv/bin/activate
+            # ========================================================
+            # INSTALL PYTHON DEPENDENCIES
+            # ========================================================
 
-            pip install --upgrade pip
-            pip install -r requirements.txt
+            echo "Installing Python dependencies..."
+
+            ./venv/bin/python -m pip install --upgrade pip
+
+            ./venv/bin/pip install -r requirements.txt
+
+            # ========================================================
+            # VERIFY STREAMLIT
+            # ========================================================
+
+            echo "Checking Streamlit installation..."
+
+            ./venv/bin/streamlit --version
+
+            # ========================================================
+            # CREATE SYSTEMD SERVICE
+            # ========================================================
+
+            echo "Creating frontend systemd service..."
 
             sudo tee /etc/systemd/system/frontend.service > /dev/null <<EOF
             [Unit]
-            Description=Streamlit Frontend App
+            Description=Streamlit Frontend Application
             After=network.target
 
             [Service]
+            Type=simple
             User=ec2-user
+
             WorkingDirectory=/home/ec2-user/front/Java-springboot-project/frontend
 
-            ExecStart=/bin/bash -c 'source /home/ec2-user/front/Java-springboot-project/frontend/venv/bin/activate && streamlit run app.py --server.port=8501 --server.address=0.0.0.0'
+            ExecStart=/home/ec2-user/front/Java-springboot-project/frontend/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0
 
-            Environment=API_URL=http://localhost:8084
+            Environment="API_URL=http://localhost:8084"
 
             Restart=always
             RestartSec=5
@@ -113,47 +197,69 @@ jobs:
             WantedBy=multi-user.target
             EOF
 
+            # ========================================================
+            # RELOAD SYSTEMD
+            # ========================================================
+
+            echo "Reloading systemd..."
+
             sudo systemctl daemon-reload
+
+            # ========================================================
+            # ENABLE SERVICE
+            # ========================================================
+
             sudo systemctl enable frontend
+
+            # ========================================================
+            # RESTART FRONTEND
+            # ========================================================
+
+            echo "Restarting frontend..."
+
             sudo systemctl restart frontend
 
-            echo "Deployment completed."
+            # ========================================================
+            # WAIT FOR STARTUP
+            # ========================================================
 
-      ######################################################
-      # Email Notification
-      ######################################################
+            echo "Waiting for frontend startup..."
 
-      - name: 📧 Send Deployment Report
-        if: success() || failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: AI Deployment Report - ${{ github.repository }}
-          to: ${{ secrets.EMAIL_TO }}
-          from: ${{ secrets.EMAIL_USERNAME }}
+            sleep 10
 
-          body: |
-            🚀 AI Deployment Report
+            # ========================================================
+            # CHECK SERVICE
+            # ========================================================
 
-            Repository : ${{ github.repository }}
-            Workflow   : ${{ github.workflow }}
-            Branch     : ${{ github.ref_name }}
-            Commit     : ${{ github.sha }}
+            echo "Checking frontend service..."
 
-            Status     : ${{ job.status }}
+            sudo systemctl status frontend --no-pager
 
-            Triggered By : ${{ github.actor }}
-            Run Number   : ${{ github.run_number }}
+            # ========================================================
+            # CHECK PORT
+            # ========================================================
 
-            SonarQube Analysis : Completed
-            Quality Gate       : Passed
+            echo "Checking port 8501..."
 
-            Deployment Target  : EC2
-            Frontend URL       : http://${{ secrets.EC2_HOST }}:8501
+            if sudo ss -lntp | grep ':8501'; then
 
-            Regards,
-            GitHub Actions
+              echo "=========================================="
+              echo "Frontend is running on port 8501"
+              echo "=========================================="
+
+            else
+
+              echo "=========================================="
+              echo "ERROR: Frontend is NOT listening on port 8501"
+              echo "=========================================="
+
+              echo "Frontend logs:"
+              sudo journalctl -u frontend --no-pager -n 100
+
+              exit 1
+
+            fi
+
+            echo "=========================================="
+            echo "Frontend Deployment Completed Successfully"
+            echo "=========================================="
