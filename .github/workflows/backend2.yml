@@ -7,8 +7,8 @@ on:
   #     - main
 
 env:
-  ECR_REGISTRY: 543855655532.dkr.ecr.us-east-1.amazonaws.com
-  IMAGE_NAME: datastore-backend
+  ECR_REGISTRY: 058264395605.dkr.ecr.us-east-1.amazonaws.com/img1
+  IMAGE_NAME: img1
   AWS_REGION: us-east-1
 
 jobs:
