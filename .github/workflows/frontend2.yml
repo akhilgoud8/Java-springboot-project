@@ -23,7 +23,18 @@ jobs:
         uses: actions/checkout@v5
 
       # ============================================================
-      # 2. SET UP JAVA 17 (required for SonarQube scanner)
+      # 2. VERIFY REQUIRED SECRETS ARE SET
+      # ============================================================
+      - name: Verify required secrets
+        run: |
+          if [ -z "${{ secrets.API_URL }}" ]; then
+            echo "ERROR: API_URL secret is not set in GitHub repo settings."
+            exit 1
+          fi
+          echo "API_URL secret is present."
+
+      # ============================================================
+      # 3. SET UP JAVA 17 (required for SonarQube scanner)
       # ============================================================
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -32,7 +43,7 @@ jobs:
           java-version: '17'
 
       # ============================================================
-      # 3. SONARQUBE SCAN
+      # 4. SONARQUBE SCAN
       # ============================================================
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -46,7 +57,7 @@ jobs:
             -Dsonar.sources=frontend
 
       # ============================================================
-      # 4. SONARQUBE QUALITY GATE
+      # 5. SONARQUBE QUALITY GATE
       # ============================================================
       - name: SonarQube Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
@@ -56,7 +67,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       # ============================================================
-      # 5. CONFIGURE AWS CREDENTIALS
+      # 6. CONFIGURE AWS CREDENTIALS
       # ============================================================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -66,7 +77,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ============================================================
-      # 6. ENSURE ECR REPOSITORY EXISTS
+      # 7. ENSURE ECR REPOSITORY EXISTS
       # ============================================================
       - name: Ensure ECR repository exists
         run: |
@@ -79,7 +90,7 @@ jobs:
             docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
       # ============================================================
-      # 7. BUILD DOCKER IMAGE (only after Sonar gate passes)
+      # 8. BUILD DOCKER IMAGE (only after Sonar gate passes)
       # ============================================================
       - name: Build Docker image
         working-directory: frontend
@@ -87,7 +98,7 @@ jobs:
           docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
       # ============================================================
-      # 8. SMOKE-TEST CONTAINER IN CI
+      # 9. SMOKE-TEST CONTAINER IN CI
       # ============================================================
       - name: Run container in CI (smoke test)
         run: |
@@ -119,7 +130,7 @@ jobs:
           docker rm ci-test-${{ env.IMAGE_NAME }} || true
 
       # ============================================================
-      # 9. TAG AND PUSH TO ECR
+      # 10. TAG AND PUSH TO ECR
       # ============================================================
       - name: Push image to ECR
         run: |
@@ -129,7 +140,7 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       # ============================================================
-      # 10. DEPLOY TO EC2
+      # 11. DEPLOY TO EC2
       # ============================================================
       - name: Deploy Frontend to EC2
         uses: appleboy/ssh-action@v1.1.0
@@ -164,8 +175,11 @@ jobs:
 
             docker ps
 
+            echo "Verifying API_URL was set correctly inside container:"
+            docker exec ${{ env.IMAGE_NAME }} env | grep API_URL
+
       # ============================================================
-      # 11. VERIFY DEPLOYED APPLICATION
+      # 12. VERIFY DEPLOYED APPLICATION
       # ============================================================
       - name: Verify Frontend on EC2
         uses: appleboy/ssh-action@v1.1.0
