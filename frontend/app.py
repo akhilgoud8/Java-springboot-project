@@ -349,7 +349,10 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # API URL
-API_URL = os.environ.get("API_URL", "http://98.93.4.69:8084")
+API_URL = os.environ.get("API_URL")
+if not API_URL:
+    st.error("⚠️ Configuration Error: API_URL environment variable is not set. Please contact the administrator.")
+    st.stop()
 
 # Tabs with emojis and clear names
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
